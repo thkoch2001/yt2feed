@@ -1,7 +1,7 @@
 from pprint import pprint
 
 import datetime
-from jinja2 import Environment, FileSystemLoader, StrictUndefined#, Template
+from jinja2 import Environment, PackageLoader, StrictUndefined
 import json
 import os
 import sys
@@ -43,6 +43,7 @@ def parse_pl_info_json(directory, mdjs):
         'icon_url' : None,
         'link': "LINK",
         'title': "TITLE",
+        'original_url': mdjs.get("original_url"),
     }
 
 
@@ -75,6 +76,7 @@ def parse_info_json(directory, info_json_file):
             "media_file_timestamp": os.stat(os.path.join(directory, media_filename)).st_mtime,
             "duration": str(datetime.timedelta(seconds=mdjs["duration"])) if mdjs.get("duration") is not None else None,
             "url": None,
+            "original_url": mdjs.get("url"),
             "media_type": None,
         })
 
@@ -109,11 +111,13 @@ def get_template_data(directory):
     return pl_info
 
 
-def render(script_dir, out_file, template_data):
-    templates_dir = os.path.join(script_dir, "templates")
+def render(out_file, template_data):
     environment = Environment(
-        loader=FileSystemLoader(templates_dir),
-        undefined=StrictUndefined
+        loader=PackageLoader(__package__ or "__main__"),
+        undefined=StrictUndefined,
+        autoescape=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
     )
     template = environment.get_template("feed.xml.jinja")
     feed_content = template.render(template_data)
@@ -130,13 +134,12 @@ def file_needs_update(path, newest_timestamp):
 
 
 def main():
-    script_dir = os.path.dirname(os.path.realpath(__file__))
     podcast_directory = os.fsencode(sys.argv[1])
     template_data = get_template_data(podcast_directory)
     pprint(template_data)
     out_file = os.path.join(podcast_directory, b"feed.xml")
     if file_needs_update(out_file, template_data["newest_media_file_timestamp"]):
-        render(script_dir, out_file, template_data)
+        render(out_file, template_data)
     else:
         print("Noting to do")
 
