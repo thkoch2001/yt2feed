@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+{#% if style_rss_feed %}
+<?xml-stylesheet type="text/xsl" href="style.xsl"?>
+{% endif %#}
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <updated>{#{ last_update }#}</updated>
+    <title><![CDATA[{{ title }}]]></title>
+    <link><![CDATA[{{ link }}]]></link>
+    {% if icon_url != None %}
+    <itunes:image href="{{ icon_url }}"/>
+    {% endif %}
+
+
+{% for item in entries %}
+    <item>
+      <id><![CDATA[{{ item.id }}]]></id>
+      <title><![CDATA[{{ item.title }}]]></title>
+      <enclosure url="{{ item.url }}" type="{{ item.media_type }}"/>
+      {% if item.pub_date != None %}<pubDate>{{ item.pub_date }}</pubDate>{% endif %}
+      {% if item.thumbnail_filename != None %}<itunes:image href="{{ item.thumbnail_filename }}"/>{% endif %}
+      {% if item.description != None %}<itunes:summary><![CDATA[{{ item.description }}]]></itunes:summary> {% endif %}
+      {% if item.duration != None %}<itunes:duration>{{ item.duration }}</itunes:duration>{% endif %}
+    </item>
+{% endfor %}
+  </channel>
+</rss>
