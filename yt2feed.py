@@ -1,13 +1,28 @@
 from pprint import pprint
 
+import argparse
 import datetime
 from jinja2 import Environment, PackageLoader, StrictUndefined
 import json
 import os
+import subprocess
 import sys
 
 INFO_JSON_SUFFIX = b".info.json"
-
+YT_DLP_ARGS_COMMON = [
+    "yt-dlp",
+    "--verbose",
+    "--ignore-config",
+    "--print", "after_move:filepath,filename",
+    "--restrict-filenames",
+    "--break-on-existing",
+    "--write-thumbnail",
+    "--convert-thumbnails", "jpg",
+    "--write-info-json",
+    "--write-playlist-metafiles",
+    "--extract-audio",
+    "--download-archive", "download-archive"
+]
 
 def get_thumbnail_filename(directory, basename):
     extension = b"jpg"
@@ -133,8 +148,53 @@ def file_needs_update(path, newest_timestamp):
     return path_timestamp < newest_timestamp
 
 
-def main():
-    podcast_directory = os.fsencode(sys.argv[1])
+def create_argsparser():
+    parser = argparse.ArgumentParser(
+        prog = "yt2feed",
+        description = "Create podcast feeds from video channels via yt-dlp",
+    )
+    subparsers = parser.add_subparsers(required=True, description = "action")
+
+    rf = subparsers.add_parser("renderfeed", help = "render feed.xml for one video playlist")
+    rf.add_argument("dir", help="working directory")
+    rf.set_defaults(func=lambda args: do_render_feed(os.fsencode(args.dir)))
+
+    dl = subparsers.add_parser("download", help = "download one playlist and any new videos")
+    dl.add_argument("input_dir", help="input directory for one playlist")
+    dl.add_argument("working_dir", help="working directory")
+    dl.set_defaults(func=lambda args: do_download(os.fsencode(args.input_dir), os.fsencode(args.working_dir)))
+
+    dl = subparsers.add_parser("all", help = "download and render all playlists")
+    dl.add_argument("input_dir", help="input directory with sub-dirs with yt-dlp-args files")
+    dl.add_argument("webroot_dir", help="webroot directory")
+    dl.set_defaults(func=lambda args: do_all(os.fsencode(args.input_dir), os.fsencode(args.webroot_dir)))
+
+    return parser
+
+
+def do_all(input_dir, webroot_dir):
+    for dir in os.listdir(input_dir):
+        if not os.path.isdir(dir):
+            continue
+        fulldir = os.path.join(input_dir, dir)
+        working_dir = os.path.join(webroot_dir, dir)
+        if not os.path.isdir(working_dir):
+            os.mkdir(working_dir)
+        do_download(fulldir, working_dir)
+        do_render_feed(working_dir)
+
+
+def do_download(input_dir, working_dir):
+    input_file = os.path.join(input_dir, b"yt-dlp-args")
+    with open(input_file, "r") as argsfile:
+        yt_dlp_args = argsfile.read().splitlines()
+    full_args = YT_DLP_ARGS_COMMON + yt_dlp_args
+    p = subprocess.run(full_args, cwd=working_dir)
+    if not p.returncode in [0, 101]:
+        sys.exit(p.returncode)
+
+
+def do_render_feed(podcast_directory):
     template_data = get_template_data(podcast_directory)
     pprint(template_data)
     out_file = os.path.join(podcast_directory, b"feed.xml")
@@ -142,6 +202,11 @@ def main():
         render(out_file, template_data)
     else:
         print("Noting to do")
+
+
+def main():
+    args = create_argsparser().parse_args()
+    args.func(args)
 
 
 main()
