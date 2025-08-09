@@ -10,17 +10,20 @@
     {% if icon_url != None %}
       <itunes:image href="{{ icon_url }}"/>
     {% endif %}
+    <description>
+      <![CDATA[{{ description }}]]>
+    </description>
 
     {% for item in entries %}
       <item>
         <id><![CDATA[{{ item.id }}]]></id>
         <title><![CDATA[{{ item.title }}]]></title>
-        <enclosure url="{{ item.url }}" type="{{ item.media_type }}"/>
+        <enclosure url="{{ base_url }}/{{ item.media_filename }}" type="{{ item.media_type }}" length="{{ item.media_file_stat.st_size }}" />
         {% if item.pub_date != None %}
           <pubDate>{{ item.pub_date }}</pubDate>
         {% endif %}
         {% if item.thumbnail_filename != None %}
-          <itunes:image href="{{ item.thumbnail_filename }}"/>
+          <itunes:image href="{{ base_url }}/{{ item.thumbnail_filename }}"/>
         {% endif %}
         {% if item.description != None %}
           <itunes:summary><![CDATA[{{ item.description }}]]></itunes:summary>

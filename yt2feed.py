@@ -5,10 +5,13 @@ import datetime
 from jinja2 import Environment, PackageLoader, StrictUndefined
 import json
 import os
+from pathlib import Path
+import re
 import subprocess
 import sys
 
-INFO_JSON_SUFFIX = b".info.json"
+INFO_JSON_SUFFIX = ".info.json"
+PROGRAM_NAME = "yt2feed"
 YT_DLP_ARGS_COMMON = [
     "yt-dlp",
     "--verbose",
@@ -21,30 +24,32 @@ YT_DLP_ARGS_COMMON = [
     "--write-info-json",
     "--write-playlist-metafiles",
     "--extract-audio",
-    "--download-archive", "download-archive"
+    "--download-archive", "download-archive",
+    "--retry-sleep", "http:exp=1:100:3",
+    "--retry-sleep", "fragment:exp=1:20",
 ]
 
-def get_thumbnail_filename(directory, basename):
-    extension = b"jpg"
-    filename = b".".join([basename, extension])
-    fullpath = os.path.join(directory, filename)
-    if os.path.isfile(fullpath):
+def get_thumbnail_filename(dir_path, basename):
+    extension = "jpg"
+    filename = ".".join([basename, extension])
+    if (dir_path / filename).is_file():
       return filename
 
 
-def get_media_filename(directory, basename, thumbnail_filename):
+def get_media_filename(dir_path, basename, thumbnail_filename):
     media_filename = None
-    for file in os.listdir(directory):
-        if not file.startswith(basename):
+    for file in dir_path.iterdir():
+        filename = file.name
+        if not filename.startswith(basename):
             continue
-        if file.endswith(INFO_JSON_SUFFIX):
+        if filename.endswith(INFO_JSON_SUFFIX):
             continue
-        if file == thumbnail_filename:
+        if filename == thumbnail_filename:
             continue
         if media_filename is not None:
             print(f"Error: Found two possible media files: '{media_filename}' and '{filename}'")
             sys.exit(1)
-        media_filename = file
+        media_filename = filename
 
     if media_filename is None:
         print(f"Error: no media file found for '{basename}'")
@@ -52,9 +57,10 @@ def get_media_filename(directory, basename, thumbnail_filename):
     return media_filename
 
 
-def parse_pl_info_json(directory, mdjs):
-
+def parse_pl_info_json(working_path, mdjs):
+#TODO!!!!
     return {
+        'description' : None,
         'icon_url' : None,
         'link': "LINK",
         'title': "TITLE",
@@ -67,44 +73,42 @@ def parse_timestamp(mdjs, fullpath):
         return mdjs["timestamp"]
     if "upload_date" in mdjs:
         return datetime.datetime.strptime(mdjs["upload_date"], "%Y%m%d").timestamp()
-    return os.stat(fullpath).st_ctime
+    return fullpath.stat().st_ctime
 
 
-def parse_info_json(directory, info_json_file):
-    fullpath = os.path.join(directory, info_json_file)
-    with open(fullpath) as handle:
-        mdjs = json.load(handle)
-        if mdjs.get("_type") == "playlist":
-            return ("playlist", parse_pl_info_json(directory, mdjs))
-        basename = info_json_file.removesuffix(INFO_JSON_SUFFIX)
-        thumbnail_filename = get_thumbnail_filename(directory, basename)
-        media_filename = get_media_filename(directory, basename, thumbnail_filename)
+def parse_info_json(working_path, info_json_file):
+    fullpath = working_path / info_json_file
+    mdjs = json.load(fullpath.open())
+    if mdjs.get("_type") == "playlist":
+        return ("playlist", parse_pl_info_json(working_path, mdjs))
+    basename = info_json_file.name.removesuffix(INFO_JSON_SUFFIX)
+    thumbnail_filename = get_thumbnail_filename(working_path, basename)
+    media_filename = get_media_filename(working_path, basename, thumbnail_filename)
 
-        return (mdjs.get("_type"), {
-            "title": mdjs["title"],
-            "id": mdjs["id"],
-            "timestamp": parse_timestamp(mdjs, fullpath),
-            "pub_date": datetime.datetime.strptime(mdjs["upload_date"], "%Y%m%d").strftime("%a, %d %b %Y %H:%M:%S +0000") if mdjs.get("upload_date") is not None else None,
-            "description": mdjs.get("description"),
-            "thumbnail_filename": os.fsdecode(thumbnail_filename),
-            "media_filename": os.fsdecode(media_filename),
-            "media_file_timestamp": os.stat(os.path.join(directory, media_filename)).st_mtime,
-            "duration": str(datetime.timedelta(seconds=mdjs["duration"])) if mdjs.get("duration") is not None else None,
-            "url": None,
-            "original_url": mdjs.get("url"),
-            "media_type": None,
-        })
+    return (mdjs.get("_type"), {
+        "title": mdjs["title"],
+        "id": mdjs["id"],
+        "timestamp": parse_timestamp(mdjs, fullpath),
+        "pub_date": datetime.datetime.strptime(mdjs["upload_date"], "%Y%m%d").strftime("%a, %d %b %Y %H:%M:%S +0000") if mdjs.get("upload_date") is not None else None,
+        "description": mdjs.get("description"),
+        "thumbnail_filename": thumbnail_filename,
+        "media_filename": media_filename,
+        "media_file_stat": (working_path / media_filename).stat(),
+        "duration": str(datetime.timedelta(seconds=mdjs["duration"])) if mdjs.get("duration") is not None else None,
+        "original_url": mdjs.get("url"),
+        "media_type": "audio", # TODO: just add file extension after slash?
+    })
 
 
-def get_template_data(directory):
+def get_template_data(working_path):
     entries = []
     pl_info = None
     newest_media_file_timestamp = 0
-    for file in os.listdir(directory):
-        if not file.endswith(INFO_JSON_SUFFIX):
+    for file in working_path.iterdir():
+        if not file.name.endswith(INFO_JSON_SUFFIX):
             continue
 
-        (t, parsed_info_json) = parse_info_json(directory, file)
+        (t, parsed_info_json) = parse_info_json(working_path, file)
         if t == "playlist":
             if pl_info == None:
                 pl_info = parsed_info_json
@@ -112,8 +116,8 @@ def get_template_data(directory):
             else:
                 print("Error: Found a second playlist .info.json file. exiting")
                 sys.exit(1)
-        if parsed_info_json["media_file_timestamp"] > newest_media_file_timestamp:
-            newest_media_file_timestamp = parsed_info_json["media_file_timestamp"]
+
+        newest_media_file_timestamp = max(parsed_info_json["media_file_stat"].st_mtime, newest_media_file_timestamp)
         entries.append(parsed_info_json)
 
     if pl_info == None:
@@ -142,71 +146,137 @@ def render(out_file, template_data):
 
 
 def file_needs_update(path, newest_timestamp):
-    if not os.path.isfile(path):
+    if not path.exists():
         return True
-    path_timestamp = os.stat(path).st_mtime
+    path_timestamp = path.stat().st_mtime
     return path_timestamp < newest_timestamp
 
 
-def create_argsparser():
-    parser = argparse.ArgumentParser(
-        prog = "yt2feed",
-        description = "Create podcast feeds from video channels via yt-dlp",
-    )
-    subparsers = parser.add_subparsers(required=True, description = "action")
-
-    rf = subparsers.add_parser("renderfeed", help = "render feed.xml for one video playlist")
-    rf.add_argument("dir", help="working directory")
-    rf.set_defaults(func=lambda args: do_render_feed(os.fsencode(args.dir)))
-
-    dl = subparsers.add_parser("download", help = "download one playlist and any new videos")
-    dl.add_argument("input_dir", help="input directory for one playlist")
-    dl.add_argument("working_dir", help="working directory")
-    dl.set_defaults(func=lambda args: do_download(os.fsencode(args.input_dir), os.fsencode(args.working_dir)))
-
-    dl = subparsers.add_parser("all", help = "download and render all playlists")
-    dl.add_argument("input_dir", help="input directory with sub-dirs with yt-dlp-args files")
-    dl.add_argument("webroot_dir", help="webroot directory")
-    dl.set_defaults(func=lambda args: do_all(os.fsencode(args.input_dir), os.fsencode(args.webroot_dir)))
-
-    return parser
-
-
-def do_all(input_dir, webroot_dir):
-    for dir in os.listdir(input_dir):
-        if not os.path.isdir(dir):
-            continue
-        fulldir = os.path.join(input_dir, dir)
-        working_dir = os.path.join(webroot_dir, dir)
-        if not os.path.isdir(working_dir):
-            os.mkdir(working_dir)
-        do_download(fulldir, working_dir)
-        do_render_feed(working_dir)
-
-
-def do_download(input_dir, working_dir):
-    input_file = os.path.join(input_dir, b"yt-dlp-args")
-    with open(input_file, "r") as argsfile:
-        yt_dlp_args = argsfile.read().splitlines()
+def do_download(subscription_path, working_path):
+    sub_config = Config(subscription_path)
+    yt_dlp_args = sub_config.get("yt-dlp-args").splitlines()
     full_args = YT_DLP_ARGS_COMMON + yt_dlp_args
-    p = subprocess.run(full_args, cwd=working_dir)
+    # TODO: put url in separate url file
+
+    p = subprocess.run(full_args, cwd=working_path)
     if not p.returncode in [0, 101]:
         sys.exit(p.returncode)
 
 
-def do_render_feed(podcast_directory):
-    template_data = get_template_data(podcast_directory)
-    pprint(template_data)
-    out_file = os.path.join(podcast_directory, b"feed.xml")
-    if file_needs_update(out_file, template_data["newest_media_file_timestamp"]):
-        render(out_file, template_data)
+def do_render_feed(webroot_url, working_path):
+    template_data = get_template_data(working_path)
+    template_data["base_url"] = webroot_url.removesuffix("/") + "/" + working_path.name
+    out_path = working_path / "feed.xml"
+    if file_needs_update(out_path, template_data["newest_media_file_timestamp"]):
+        render(out_path, template_data)
     else:
         print("Noting to do")
 
 
+class Config():
+    def __init__(self, path):
+        self.path = path
+
+    @classmethod
+    def get_config(cls, config_argument):
+        if config_argument is not None:
+            if not config_argument.is_dir():
+                print(f"Error: not a directory '{config_argument}'")
+                exit(1)
+            return config_argument
+
+        p = Path("/etc") / PROGRAM_NAME
+        if p.is_dir():
+            return cls(p)
+        _home = os.path.expanduser('~')
+        xdg_config_home = os.environ.get('XDG_CONFIG_HOME') or os.path.join(_home, '.config')
+        p = Path(xdg_config_home) / PROGRAM_NAME
+        if p.is_dir():
+            return cls(p)
+        print("No config dir found")
+        sys.exit(1)
+
+    def get(self, name):
+        p = self.path / name
+        return p.read_text().strip()
+
+    def iter(self, name):
+        p = self.path / name
+        return p.iterdir()
+
+# TODO:
+# - logging
+# - provide title, description
+# - don't download channel thumbnail on every update
+
+def create_argsparser():
+    parser = argparse.ArgumentParser(
+        prog = PROGRAM_NAME,
+        description = "Create podcast feeds from video channels via yt-dlp",
+    )
+    parser.add_argument('--config', '-c', type=Path, metavar="PATH")
+    action_choices = ["download", "render"]
+    parser.add_argument('--action', '-a', choices=action_choices, default=action_choices, nargs='*')
+    parser.add_argument('--include', '-i', metavar="REGEX")
+
+    subparsers = parser.add_subparsers(required=False, dest="sub")
+
+    sub_add = subparsers.add_parser("add", help = "add video channel")
+    sub_add.add_argument("name", help="Name to be used for the feed's folder and url")
+    sub_add.add_argument("url", help="vidoe channel url")
+
+    sub_list = subparsers.add_parser("list", help = "list video channels, respect include filter")
+
+    return parser
+
+
+def iter_subscriptions(config, include):
+    pattern = re.compile(include, re.IGNORECASE) if include else None
+
+    for subscription_path in config.iter("subscriptions"):
+        if not subscription_path.is_dir():
+            continue
+
+        if not pattern or pattern.search(subscription_path.name):
+            yield(subscription_path)
+
+
+def do_run(config, action, include):
+    webroot_path = Path(config.get("webroot_path"))
+    webroot_url = config.get("webroot_url")
+    for subscription_path in iter_subscriptions(config, include):
+        working_path = webroot_path / (subscription_path.name)
+        if not working_path.is_dir():
+            working_path.mkdir()
+
+        if 'download' in action:
+            do_download(subscription_path, working_path)
+        if 'render' in action:
+            do_render_feed(webroot_url, working_path)
+
+
+def do_list(config, include):
+    for subscription_path in iter_subscriptions(config, include):
+        print(subscription_path.name)
+
+
+def do_add(config, name, url):
+    dir = config.path / name
+    dir.mkdir()
+    (dir / "yt-dlp-args").write_text(url)
+
+
 def main():
     args = create_argsparser().parse_args()
-    args.func(args)
+    pprint(args)
+    config = Config.get_config(args.config)
 
+    match args.sub:
+        case None:
+            do_run(config, args.action, args.include)
+        case "add":
+            do_add(config, args.name, args.url)
+        case "list":
+            do_list(config, args.include)
 
 main()
