@@ -7,8 +7,8 @@
     <updated>{#{ last_update }#}</updated>
     <title><![CDATA[{{ title }}]]></title>
     <link><![CDATA[{{ link }}]]></link>
-    {% if icon_url != None %}
-      <itunes:image href="{{ icon_url }}"/>
+    {% if thumbnail_filename != None %}
+      <itunes:image href="{{ base_url}}/{{ thumbnail_filename }}"/>
     {% endif %}
     <description>
       <![CDATA[{{ description }}]]>

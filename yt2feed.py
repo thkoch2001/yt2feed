@@ -1,9 +1,8 @@
-from pprint import pprint
-
 import argparse
 import datetime
 from jinja2 import Environment, PackageLoader, StrictUndefined
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -14,7 +13,6 @@ INFO_JSON_SUFFIX = ".info.json"
 PROGRAM_NAME = "yt2feed"
 YT_DLP_ARGS_COMMON = [
     "yt-dlp",
-    "--verbose",
     "--ignore-config",
     "--print", "after_move:filepath,filename",
     "--restrict-filenames",
@@ -28,6 +26,16 @@ YT_DLP_ARGS_COMMON = [
     "--retry-sleep", "http:exp=1:100:3",
     "--retry-sleep", "fragment:exp=1:20",
 ]
+
+
+def is_dir_empty(path):
+    not any(path.iterdir())
+
+
+def ee(msg, code=1):
+    logger.error(msg)
+    sys.exit(code)
+
 
 def get_thumbnail_filename(dir_path, basename):
     extension = "jpg"
@@ -47,23 +55,22 @@ def get_media_filename(dir_path, basename, thumbnail_filename):
         if filename == thumbnail_filename:
             continue
         if media_filename is not None:
-            print(f"Error: Found two possible media files: '{media_filename}' and '{filename}'")
-            sys.exit(1)
+            ee(f"Found two possible media files: '{media_filename}' and '{filename}'")
         media_filename = filename
 
     if media_filename is None:
-        print(f"Error: no media file found for '{basename}'")
-        sys.exit(1)
+        ee(f"no media file found for '{basename}'")
     return media_filename
 
 
-def parse_pl_info_json(working_path, mdjs):
+def parse_pl_info_json(working_path, mdjs, sub_config):
+
 #TODO!!!!
     return {
-        'description' : None,
+        'description' : mdjs.get("description", sub_config.get_or("description", None)),
         'icon_url' : None,
         'link': "LINK",
-        'title': "TITLE",
+        'title': mdjs.get("title", sub_config.get_or("title", sub_config.path.name)),
         'original_url': mdjs.get("original_url"),
     }
 
@@ -76,13 +83,16 @@ def parse_timestamp(mdjs, fullpath):
     return fullpath.stat().st_ctime
 
 
-def parse_info_json(working_path, info_json_file):
+def parse_info_json(working_path, info_json_file, sub_config):
     fullpath = working_path / info_json_file
     mdjs = json.load(fullpath.open())
-    if mdjs.get("_type") == "playlist":
-        return ("playlist", parse_pl_info_json(working_path, mdjs))
     basename = info_json_file.name.removesuffix(INFO_JSON_SUFFIX)
     thumbnail_filename = get_thumbnail_filename(working_path, basename)
+
+    if mdjs.get("_type") == "playlist":
+        parsed = parse_pl_info_json(working_path, mdjs, sub_config)
+        parsed['thumbnail_filename'] = thumbnail_filename
+        return ("playlist", parsed)
     media_filename = get_media_filename(working_path, basename, thumbnail_filename)
 
     return (mdjs.get("_type"), {
@@ -100,7 +110,7 @@ def parse_info_json(working_path, info_json_file):
     })
 
 
-def get_template_data(working_path):
+def get_template_data(working_path, sub_config):
     entries = []
     pl_info = None
     newest_media_file_timestamp = 0
@@ -108,21 +118,19 @@ def get_template_data(working_path):
         if not file.name.endswith(INFO_JSON_SUFFIX):
             continue
 
-        (t, parsed_info_json) = parse_info_json(working_path, file)
+        (t, parsed_info_json) = parse_info_json(working_path, file, sub_config)
         if t == "playlist":
             if pl_info == None:
                 pl_info = parsed_info_json
                 continue
             else:
-                print("Error: Found a second playlist .info.json file. exiting")
-                sys.exit(1)
+                ee(f"Found a second playlist .info.json file for {working_path.name}: {file.name}")
 
         newest_media_file_timestamp = max(parsed_info_json["media_file_stat"].st_mtime, newest_media_file_timestamp)
         entries.append(parsed_info_json)
 
     if pl_info == None:
-        print("Error: No playlist .info.json file found!")
-        sys.exit(1)
+        ee("Error: No playlist .info.json file found!")
 
     entries.sort(reverse=True, key=lambda x: x["timestamp"])
     pl_info["entries"] = entries
@@ -152,25 +160,38 @@ def file_needs_update(path, newest_timestamp):
     return path_timestamp < newest_timestamp
 
 
-def do_download(subscription_path, working_path):
+def do_download(subscription_path, working_path, force_plthumb):
     sub_config = Config(subscription_path)
-    yt_dlp_args = sub_config.get("yt-dlp-args").splitlines()
-    full_args = YT_DLP_ARGS_COMMON + yt_dlp_args
-    # TODO: put url in separate url file
+    yt_dlp_args = sub_config.get_or("yt-dlp-args", "").splitlines()
+    url = sub_config.get("url")
 
+    full_args = [] + YT_DLP_ARGS_COMMON
+
+    if logger.isEnabledFor(logging.DEBUG):
+        full_args.append("--verbose")
+
+    # avoid re-downloading playlist thumbnails after first download
+    if not force_plthumb and not is_dir_empty(working_path):
+        full_args += ("-o", "pl_thumbnail:")
+
+    full_args += yt_dlp_args
+    full_args.append(url)
+
+    logger.info(f"starting download for {subscription_path.name}")
     p = subprocess.run(full_args, cwd=working_path)
     if not p.returncode in [0, 101]:
-        sys.exit(p.returncode)
+        ee(f"yt-dlp returned error code {p.returncode}")
 
 
-def do_render_feed(webroot_url, working_path):
-    template_data = get_template_data(working_path)
+def do_render_feed(webroot_url, working_path, sub_config, force):
+    template_data = get_template_data(working_path, sub_config)
     template_data["base_url"] = webroot_url.removesuffix("/") + "/" + working_path.name
     out_path = working_path / "feed.xml"
-    if file_needs_update(out_path, template_data["newest_media_file_timestamp"]):
+    if force or file_needs_update(out_path, template_data["newest_media_file_timestamp"]):
+        logger.warning(f"rendering {working_path.name}")
         render(out_path, template_data)
     else:
-        print("Noting to do")
+        logger.info(f"no rendering needed for {working_path.name}")
 
 
 class Config():
@@ -181,8 +202,7 @@ class Config():
     def get_config(cls, config_argument):
         if config_argument is not None:
             if not config_argument.is_dir():
-                print(f"Error: not a directory '{config_argument}'")
-                exit(1)
+                ee(f"not a directory '{config_argument}'")
             return config_argument
 
         p = Path("/etc") / PROGRAM_NAME
@@ -193,35 +213,50 @@ class Config():
         p = Path(xdg_config_home) / PROGRAM_NAME
         if p.is_dir():
             return cls(p)
-        print("No config dir found")
-        sys.exit(1)
+        ee("No config dir found")
 
     def get(self, name):
         p = self.path / name
         return p.read_text().strip()
 
+    def get_or(self, name, default):
+        p = self.path / name
+        if p.is_file():
+            return self.get(name)
+        return default
+
     def iter(self, name):
         p = self.path / name
         return p.iterdir()
 
-# TODO:
-# - logging
-# - provide title, description
-# - don't download channel thumbnail on every update
 
 def create_argsparser():
+    def regex(pattern):
+        def validate(arg_value):
+            if not re.match(pattern, arg_value):
+                raise argparse.ArgumentTypeError("invalid value")
+            return arg_value
+
+        return validate
+
     parser = argparse.ArgumentParser(
         prog = PROGRAM_NAME,
         description = "Create podcast feeds from video channels via yt-dlp",
     )
     parser.add_argument('--config', '-c', type=Path, metavar="PATH")
+    parser.add_argument('--loglevel', '-l', metavar="LEVEL", default="warning", choices=[
+        "debug", "info", "warning", "error"
+    ])
     action_choices = ["download", "render"]
     parser.add_argument('--action', '-a', choices=action_choices, default=action_choices, nargs='*')
     parser.add_argument('--include', '-i', metavar="REGEX")
+    parser.add_argument('--force-render', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--force-plthumb', action=argparse.BooleanOptionalAction, help="force re-download of playlist thumbnail")
 
     subparsers = parser.add_subparsers(required=False, dest="sub")
 
     sub_add = subparsers.add_parser("add", help = "add video channel")
+    sub_add.add_argument("--dateafter", help="Download only videos uploaded on or after this date", metavar="YYYYMMDD", type=regex("^\\d{8}$"))
     sub_add.add_argument("name", help="Name to be used for the feed's folder and url")
     sub_add.add_argument("url", help="vidoe channel url")
 
@@ -241,18 +276,20 @@ def iter_subscriptions(config, include):
             yield(subscription_path)
 
 
-def do_run(config, action, include):
+def do_run(config, args):
+    action = args.action
+
     webroot_path = Path(config.get("webroot_path"))
     webroot_url = config.get("webroot_url")
-    for subscription_path in iter_subscriptions(config, include):
+    for subscription_path in iter_subscriptions(config, args.include):
         working_path = webroot_path / (subscription_path.name)
         if not working_path.is_dir():
             working_path.mkdir()
 
         if 'download' in action:
-            do_download(subscription_path, working_path)
+            do_download(subscription_path, working_path, args.force_plthumb)
         if 'render' in action:
-            do_render_feed(webroot_url, working_path)
+            do_render_feed(webroot_url, working_path, Config(subscription_path), args.force_render)
 
 
 def do_list(config, include):
@@ -260,23 +297,40 @@ def do_list(config, include):
         print(subscription_path.name)
 
 
-def do_add(config, name, url):
-    dir = config.path / name
+def do_add(config, name, url, args):
+    dir = config.path / "subscriptions" / name
+    if dir.is_dir():
+        ee(f"Subscription with name '{name}' already exists.")
     dir.mkdir()
-    (dir / "yt-dlp-args").write_text(url)
+    (dir / "url").write_text(url)
+
+    yt_dlp_args = ""
+    if args.dateafter:
+        yt_dlp_args += f"--break-match-filters\nupload_date>={args.dateafter}\n"
+
+    (dir / "yt-dlp-args").write_text(yt_dlp_args)
 
 
 def main():
     args = create_argsparser().parse_args()
-    pprint(args)
+    logging.basicConfig(
+        level=args.loglevel.upper(),
+        stream=sys.stderr,
+        format="{levelname[0]}: {message}",
+        style='{',
+    )
     config = Config.get_config(args.config)
+    logger.debug(f"Using config at {config.path}")
 
     match args.sub:
         case None:
-            do_run(config, args.action, args.include)
+            do_run(config, args)
         case "add":
-            do_add(config, args.name, args.url)
+            do_add(config, args.name, args.url, args)
         case "list":
             do_list(config, args.include)
 
-main()
+
+logger = logging.getLogger(__name__)
+if __name__ == '__main__':
+    main()

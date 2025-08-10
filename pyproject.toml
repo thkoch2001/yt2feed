@@ -1,0 +1,49 @@
+[project]
+name = "yt2feed"
+version = "0.1"
+authors = [
+  { name="Thomas Koch", email="thomas@koch.ro" },
+]
+description = "Create podcast feeds from video channels via yt-dlp"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Intended Audience :: End Users/Desktop",
+  "License :: DFSG approved",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Topic :: Multimedia :: Sound/Audio :: Conversion",
+  "Topic :: Multimedia :: Video :: Conversion",
+]
+license = "GPL-3.0-or-later"
+keywords = ["podcast", "youtube", "yt-dlp"]
+dependencies = [
+  "jinja2",
+  "markupsafe",
+  "yt-dlp>=2025.7.21",
+]
+
+[project.scripts]
+yt2feed = "yt2feed"
+
+[project.urls]
+Homepage = "https://github.com/thkoch2001/yt2feed"
+Issues = "https://github.com/thkoch2001/yt2feed/issues"
+
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "*.py",
+  "/templates",
+]
+
+[tool.hatch.build.targets.wheel]
+include = [
+  "*.py",
+  "/templates",
+]
