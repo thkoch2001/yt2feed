@@ -1,37 +1,57 @@
-<?xml version="1.0"?>
-{#% if style_rss_feed %}
-<?xml-stylesheet type="text/xsl" href="style.xsl"?>
-{% endif %#}
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
-  <channel>
-    <updated>{#{ last_update }#}</updated>
-    <title><![CDATA[{{ title }}]]></title>
-    <link><![CDATA[{{ link }}]]></link>
-    {% if thumbnail_filename != None %}
-      <itunes:image href="{{ base_url}}/{{ thumbnail_filename }}"/>
-    {% endif %}
-    <description>
-      <![CDATA[{{ description }}]]>
-    </description>
+{#
+Atom, besides being well-specified, also allows multiple link elements and
+thus to refer back to the original video playlist.
 
-    {% for item in entries %}
-      <item>
-        <id><![CDATA[{{ item.id }}]]></id>
-        <title><![CDATA[{{ item.title }}]]></title>
-        <enclosure url="{{ base_url }}/{{ item.media_filename }}" type="{{ item.media_type }}" length="{{ item.media_file_stat.st_size }}" />
-        {% if item.pub_date != None %}
-          <pubDate>{{ item.pub_date }}</pubDate>
-        {% endif %}
-        {% if item.thumbnail_filename != None %}
-          <itunes:image href="{{ base_url }}/{{ item.thumbnail_filename }}"/>
-        {% endif %}
-        {% if item.description != None %}
-          <itunes:summary><![CDATA[{{ item.description }}]]></itunes:summary>
-        {% endif %}
-        {% if item.duration != None %}
-          <itunes:duration>{{ item.duration }}</itunes:duration>
-        {% endif %}
-      </item>
-    {% endfor %}
-  </channel>
-</rss>
+references:
+- https://github.com/gpodder/podcast-feed-best-practice
+- https://www.ietf.org/rfc/rfc4287
+- http://www.atomenabled.org/developers/syndication/#link
+- https://web.archive.org/web/20140228123540/http://www.ibm.com/developerworks/xml/library/x-atom10/index.html
+#}
+<?xml version="1.0"?>
+{% if stylesheet_url %}
+  <?xml-stylesheet type="text/xsl" href="{{ stylesheet_url }}"?>
+{% endif %}
+
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <generator uri="https://github.com/thkoch2001/yt2feed"{# TODO: version="" #}>yt2feed</generator>
+        <author><name>TODO</name></author>
+
+  <id>{{ webroot_url }}{{ working_path_name | urlencode }}</id>
+  <title><![CDATA[{{ title }}]]></title>
+  <updated>{{ updated }}</updated>
+  <link rel="related" href="{{ subscription_url }}" />
+  <link rel="self" href="{{ webroot_url }}{{ working_path_name | urlencode }}/{{ feed_self_name | urlencode }}" />
+  {% if thumbnail_filename != None %}
+    <icon>{{ webroot_url }}{{ working_path_name | urlencode }}/{{ thumbnail_filename | urlencode }}</icon>
+  {% endif %}
+  <subtitle><![CDATA[{{ description }}]]></subtitle>
+  {% for entry in entries %}
+    <entry>
+      <id>{{ webroot_url }}{{ working_path_name | urlencode }}/{{ entry.media_filename | urlencode }}</id>
+        <author><name>TODO</name></author>
+      <title><![CDATA[{{ entry.title }}]]></title>
+      <link rel="enclosure"
+            href="{{ webroot_url }}{{ working_path_name | urlencode }}/{{ entry.media_filename | urlencode }}"
+            type="{{ entry.media_type }}"
+            length="{{ entry.media_file_stat.st_size }}" />
+      <link href="{{ entry.original_url }}" />
+      {% if entry.updated != None %}
+        <updated>{{ entry.updated }}</updated>
+      {% endif %}
+      {% if entry.thumbnail_filename != None %}
+        <itunes:image href="{{ webroot_url }}{{ working_path_name | urlencode }}/{{ entry.thumbnail_filename | urlencode }}"/>
+      {% endif %}
+      {% if entry.duration != None %}
+        <itunes:duration>{{ entry.duration }}</itunes:duration>
+      {% endif %}
+
+      {% if entry.description != None %}
+        <summary><![CDATA[{{ entry.description }}]]></summary>
+      {% endif %}
+    </entry>
+  {% endfor %}
+</feed>
+
+

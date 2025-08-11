@@ -63,7 +63,7 @@ least deny indexing (e.g. with robots.txt).
 
 - setup feed rendering with xsl stylesheet like ydl-podcast does
 - create config and subscriptions folders in add action if they don't exist
-- maybe switch to adom feed format
+- add command to generate opml file?
 - decide on feed xml filename, probably index.xml
 - maybe add a command to call rsync
 - see TODO statements in code

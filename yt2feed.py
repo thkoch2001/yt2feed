@@ -1,5 +1,5 @@
 import argparse
-import datetime
+from datetime import datetime, timedelta, UTC
 from jinja2 import Environment, PackageLoader, StrictUndefined
 import json
 import logging
@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+
 
 INFO_JSON_SUFFIX = ".info.json"
 PROGRAM_NAME = "yt2feed"
@@ -63,23 +64,11 @@ def get_media_filename(dir_path, basename, thumbnail_filename):
     return media_filename
 
 
-def parse_pl_info_json(working_path, mdjs, sub_config):
-
-#TODO!!!!
-    return {
-        'description' : mdjs.get("description", sub_config.get_or("description", None)),
-        'icon_url' : None,
-        'link': "LINK",
-        'title': mdjs.get("title", sub_config.get_or("title", sub_config.path.name)),
-        'original_url': mdjs.get("original_url"),
-    }
-
-
 def parse_timestamp(mdjs, fullpath):
     if "timestamp" in mdjs:
         return mdjs["timestamp"]
     if "upload_date" in mdjs:
-        return datetime.datetime.strptime(mdjs["upload_date"], "%Y%m%d").timestamp()
+        return datetime.strptime(mdjs["upload_date"], "%Y%m%d").timestamp()
     return fullpath.stat().st_ctime
 
 
@@ -90,23 +79,33 @@ def parse_info_json(working_path, info_json_file, sub_config):
     thumbnail_filename = get_thumbnail_filename(working_path, basename)
 
     if mdjs.get("_type") == "playlist":
-        parsed = parse_pl_info_json(working_path, mdjs, sub_config)
-        parsed['thumbnail_filename'] = thumbnail_filename
-        return ("playlist", parsed)
+        return ("playlist",{
+            'description' : mdjs.get("description", sub_config.get_or("description", None)),
+            'subscription_url': sub_config.get("url"),
+            'title': mdjs.get("title", sub_config.get_or("title", sub_config.path.name)),
+            'thumbnail_filename': thumbnail_filename,
+        })
+
     media_filename = get_media_filename(working_path, basename, thumbnail_filename)
+
+    updated = datetime \
+        .strptime(mdjs["upload_date"], "%Y%m%d") \
+        .replace(tzinfo=UTC) \
+        .isoformat(timespec="seconds") \
+        if mdjs.get("upload_date") is not None else None
 
     return (mdjs.get("_type"), {
         "title": mdjs["title"],
         "id": mdjs["id"],
         "timestamp": parse_timestamp(mdjs, fullpath),
-        "pub_date": datetime.datetime.strptime(mdjs["upload_date"], "%Y%m%d").strftime("%a, %d %b %Y %H:%M:%S +0000") if mdjs.get("upload_date") is not None else None,
+        "updated": updated,
         "description": mdjs.get("description"),
         "thumbnail_filename": thumbnail_filename,
         "media_filename": media_filename,
         "media_file_stat": (working_path / media_filename).stat(),
-        "duration": str(datetime.timedelta(seconds=mdjs["duration"])) if mdjs.get("duration") is not None else None,
+        "duration": str(timedelta(seconds=mdjs["duration"])) if mdjs.get("duration") is not None else None,
         "original_url": mdjs.get("url"),
-        "media_type": "audio", # TODO: just add file extension after slash?
+        "media_type": "audio/*", # TODO: just add file extension after slash?
     })
 
 
@@ -133,9 +132,12 @@ def get_template_data(working_path, sub_config):
         ee("Error: No playlist .info.json file found!")
 
     entries.sort(reverse=True, key=lambda x: x["timestamp"])
-    pl_info["entries"] = entries
-    pl_info["newest_media_file_timestamp"] = newest_media_file_timestamp
-    return pl_info
+    return pl_info | {
+        'entries': entries,
+        'newest_media_file_timestamp': newest_media_file_timestamp,
+        'updated': datetime.fromtimestamp(newest_media_file_timestamp, UTC).isoformat(timespec="seconds"),
+        'working_path_name': working_path.name,
+    }
 
 
 def render(out_file, template_data):
@@ -183,10 +185,10 @@ def do_download(subscription_path, working_path, force_plthumb):
         ee(f"yt-dlp returned error code {p.returncode}")
 
 
-def do_render_feed(webroot_url, working_path, sub_config, force):
-    template_data = get_template_data(working_path, sub_config)
-    template_data["base_url"] = webroot_url.removesuffix("/") + "/" + working_path.name
-    out_path = working_path / "feed.xml"
+def do_render_feed(common_template_data, working_path, sub_config, force):
+    template_data = common_template_data | get_template_data(working_path, sub_config)
+    out_path = working_path / template_data["feed_self_name"]
+
     if force or file_needs_update(out_path, template_data["newest_media_file_timestamp"]):
         logger.warning(f"rendering {working_path.name}")
         render(out_path, template_data)
@@ -219,7 +221,7 @@ class Config():
         p = self.path / name
         return p.read_text().strip()
 
-    def get_or(self, name, default):
+    def get_or(self, name, default=None):
         p = self.path / name
         if p.is_file():
             return self.get(name)
@@ -280,7 +282,12 @@ def do_run(config, args):
     action = args.action
 
     webroot_path = Path(config.get("webroot_path"))
-    webroot_url = config.get("webroot_url")
+    common_template_data = {
+        'webroot_url': config.get("webroot_url").removesuffix("/") + "/",
+        'stylesheet_url': config.get_or("stylesheet_url"),
+        'feed_self_name': config.get_or("feed_self_name", "feed.xml"),
+    }
+
     for subscription_path in iter_subscriptions(config, args.include):
         working_path = webroot_path / (subscription_path.name)
         if not working_path.is_dir():
@@ -289,7 +296,7 @@ def do_run(config, args):
         if 'download' in action:
             do_download(subscription_path, working_path, args.force_plthumb)
         if 'render' in action:
-            do_render_feed(webroot_url, working_path, Config(subscription_path), args.force_render)
+            do_render_feed(common_template_data, working_path, Config(subscription_path), args.force_render)
 
 
 def do_list(config, include):
