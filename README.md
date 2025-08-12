@@ -20,6 +20,7 @@ This is the configurations directory structure:
 │   │   └── yt-dlp-args  - (optional) arguments for yt-dlp, one arg per line
 │   ├── ...
 ├── feed_file_name       - (optional, default "feed.xml")
+├── stylesheet_url       - (optional) url to an XML Stylesheet for the feeds
 ├── webroot_path         - CWD to execute yt-dlp in
 └── webroot_url          - base url to use in the rendered feed xml file
 ```
@@ -62,7 +63,6 @@ least deny indexing (e.g. with robots.txt).
 
 ## TODO
 
-- setup feed rendering with xsl stylesheet like ydl-podcast does
 - add command to generate opml file?
 - maybe add a command to call rsync
 - see TODO statements in code
