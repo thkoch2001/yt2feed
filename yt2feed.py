@@ -204,8 +204,8 @@ class Config():
     def get_config(cls, config_argument):
         if config_argument is not None:
             if not config_argument.is_dir():
-                ee(f"not a directory '{config_argument}'")
-            return config_argument
+                logger.warning(f"not a directory '{config_argument}'")
+            return cls(config_argument)
 
         p = Path("/etc") / PROGRAM_NAME
         if p.is_dir():
@@ -213,9 +213,9 @@ class Config():
         _home = os.path.expanduser('~')
         xdg_config_home = os.environ.get('XDG_CONFIG_HOME') or os.path.join(_home, '.config')
         p = Path(xdg_config_home) / PROGRAM_NAME
-        if p.is_dir():
-            return cls(p)
-        ee("No config dir found")
+        p.mkdir(parents=True, exist_ok=True)
+        return cls(p)
+
 
     def get(self, name):
         p = self.path / name
@@ -290,8 +290,7 @@ def do_run(config, args):
 
     for subscription_path in iter_subscriptions(config, args.include):
         working_path = webroot_path / (subscription_path.name)
-        if not working_path.is_dir():
-            working_path.mkdir()
+        working_path.mkdir(parents=True, exist_ok=True)
 
         if 'download' in action:
             do_download(subscription_path, working_path, args.force_plthumb)
@@ -308,7 +307,7 @@ def do_add(config, name, url, args):
     dir = config.path / "subscriptions" / name
     if dir.is_dir():
         ee(f"Subscription with name '{name}' already exists.")
-    dir.mkdir()
+    dir.mkdir(parents=True, exist_ok=True)
     (dir / "url").write_text(url)
 
     yt_dlp_args = ""
