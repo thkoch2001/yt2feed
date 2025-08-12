@@ -187,7 +187,7 @@ def do_download(subscription_path, working_path, force_plthumb):
 
 def do_render_feed(common_template_data, working_path, sub_config, force):
     template_data = common_template_data | get_template_data(working_path, sub_config)
-    out_path = working_path / template_data["feed_self_name"]
+    out_path = working_path / template_data["feed_file_name"]
 
     if force or file_needs_update(out_path, template_data["newest_media_file_timestamp"]):
         logger.warning(f"rendering {working_path.name}")
@@ -285,7 +285,7 @@ def do_run(config, args):
     common_template_data = {
         'webroot_url': config.get("webroot_url").removesuffix("/") + "/",
         'stylesheet_url': config.get_or("stylesheet_url"),
-        'feed_self_name': config.get_or("feed_self_name", "feed.xml"),
+        'feed_file_name': config.get_or("feed_file_name", "feed.xml"),
     }
 
     for subscription_path in iter_subscriptions(config, args.include):

@@ -22,7 +22,7 @@ references:
   <title><![CDATA[{{ title }}]]></title>
   <updated>{{ updated }}</updated>
   <link rel="related" href="{{ subscription_url }}" />
-  <link rel="self" href="{{ webroot_url }}{{ working_path_name | urlencode }}/{{ feed_self_name | urlencode }}" />
+  <link rel="self" href="{{ webroot_url }}{{ working_path_name | urlencode }}/{{ feed_file_name | urlencode }}" />
   {% if thumbnail_filename != None %}
     <icon>{{ webroot_url }}{{ working_path_name | urlencode }}/{{ thumbnail_filename | urlencode }}</icon>
   {% endif %}
