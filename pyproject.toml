@@ -1,6 +1,6 @@
 [project]
 name = "yt2feed"
-version = "0.1"
+version = "0.1.1"
 authors = [
   { name="Thomas Koch", email="thomas@koch.ro" },
 ]
@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
-yt2feed = "yt2feed"
+yt2feed = "yt2feed:main"
 
 [project.urls]
 Homepage = "https://github.com/thkoch2001/yt2feed"
