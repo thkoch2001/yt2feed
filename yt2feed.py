@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime, timedelta, UTC
+from importlib.metadata import metadata, PackageNotFoundError
 from jinja2 import Environment, PackageLoader, StrictUndefined
 import json
 import logging
@@ -232,6 +233,16 @@ class Config():
         return p.iterdir()
 
 
+def get_project_metadata(key):
+    try:
+        md = metadata(__name__)
+        print(f"metadata: {list(md)}")
+        if key in md:
+            return md[key]
+    except PackageNotFoundError:
+        return 'UNINSTALLED'
+
+
 def create_argsparser():
     def regex(pattern):
         def validate(arg_value):
@@ -243,7 +254,7 @@ def create_argsparser():
 
     parser = argparse.ArgumentParser(
         prog = PROGRAM_NAME,
-        description = "Create podcast feeds from video channels via yt-dlp",
+        description = get_project_metadata('Summary')
     )
     parser.add_argument('--config', '-c', type=Path, metavar="PATH")
     parser.add_argument('--loglevel', '-l', metavar="LEVEL", default="warning", choices=[
@@ -254,6 +265,7 @@ def create_argsparser():
     parser.add_argument('--include', '-i', metavar="REGEX")
     parser.add_argument('--force-render', action=argparse.BooleanOptionalAction)
     parser.add_argument('--force-plthumb', action=argparse.BooleanOptionalAction, help="force re-download of playlist thumbnail")
+    parser.add_argument('--version', '-v', help="Show version", action='version', version=get_project_metadata('Version'))
 
     subparsers = parser.add_subparsers(required=False, dest="sub")
 
@@ -286,6 +298,9 @@ def do_run(config, args):
         'webroot_url': config.get("webroot_url").removesuffix("/") + "/",
         'stylesheet_url': config.get_or("stylesheet_url"),
         'feed_file_name': config.get_or("feed_file_name", "feed.xml"),
+        'project_name': get_project_metadata('Name'),
+        'project_url': get_project_metadata('Project-URL'),
+        'project_version': get_project_metadata('Version'),
     }
 
     for subscription_path in iter_subscriptions(config, args.include):

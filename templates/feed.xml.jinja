@@ -15,7 +15,7 @@ references:
 
 <feed xmlns="http://www.w3.org/2005/Atom"
       xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
-  <generator uri="https://github.com/thkoch2001/yt2feed"{# TODO: version="" #}>yt2feed</generator>
+  <generator uri="{{ project_url }}" version="{{ project_version }}">{{ project_name }}</generator>
         <author><name>TODO</name></author>
 
   <id>{{ webroot_url }}{{ working_path_name | urlencode }}</id>
