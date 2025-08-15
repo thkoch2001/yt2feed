@@ -142,7 +142,7 @@ def get_template_data(working_path, sub_config):
 
 def render(out_file, template_data):
     environment = Environment(
-        loader=PackageLoader(__package__ or "__main__"),
+        loader=PackageLoader(__name__),
         undefined=StrictUndefined,
         autoescape=True,
         trim_blocks=True,
