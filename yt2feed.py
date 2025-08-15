@@ -236,7 +236,6 @@ class Config():
 def get_project_metadata(key):
     try:
         md = metadata(__name__)
-        print(f"metadata: {list(md)}")
         if key in md:
             return md[key]
     except PackageNotFoundError:
