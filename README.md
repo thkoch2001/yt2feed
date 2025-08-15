@@ -61,11 +61,19 @@ The webserver can be configured to list directory contents to allow browsing
 the feeds. It might be advisable to protect the folder with a password or at
 least deny indexing (e.g. with robots.txt).
 
+## Installation
+
+### Nix
+
+From [Nur repositories](https://nur.nix-community.org/repos/thk)
+([source](https://github.com/thkoch2001/nur-packages/blob/main/pkgs/yt2feed/default.nix).
+
 ## TODO
 
 - add command to generate opml file?
 - maybe add a command to call rsync
 - see TODO statements in code
+- provide author field in atom feed
 
 ## Similar projects
 
