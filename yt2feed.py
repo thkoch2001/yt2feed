@@ -13,22 +13,7 @@ import sys
 
 INFO_JSON_SUFFIX = ".info.json"
 PROGRAM_NAME = "yt2feed"
-YT_DLP_ARGS_COMMON = [
-    "yt-dlp",
-    "--ignore-config",
-    "--print", "after_move:filepath,filename",
-    "--restrict-filenames",
-    "--break-on-existing",
-    "--write-thumbnail",
-    "--convert-thumbnails", "jpg",
-    "--write-info-json",
-    "--write-playlist-metafiles",
-    "--extract-audio",
-    "--download-archive", "download-archive",
-    "--retry-sleep", "http:exp=1:100:3",
-    "--retry-sleep", "fragment:exp=1:20",
-]
-
+YT_DLP_CONFIG_FILE = "yt-dlp.conf"
 
 def is_dir_empty(path):
     not any(path.iterdir())
@@ -165,23 +150,19 @@ def file_needs_update(path, newest_timestamp):
 
 def do_download(subscription_path, working_path, force_plthumb):
     sub_config = Config(subscription_path)
-    yt_dlp_args = sub_config.get_or("yt-dlp-args", "").splitlines()
-    url = sub_config.get("url")
-
-    full_args = [] + YT_DLP_ARGS_COMMON
+    args = sub_config.get_yt_dlp_args()
 
     if logger.isEnabledFor(logging.DEBUG):
-        full_args.append("--verbose")
+        args.append("--verbose")
 
     # avoid re-downloading playlist thumbnails after first download
     if not force_plthumb and not is_dir_empty(working_path):
-        full_args += ("-o", "pl_thumbnail:")
+        args += ["-o", "pl_thumbnail:"]
 
-    full_args += yt_dlp_args
-    full_args.append(url)
+    args.append(sub_config.get("url"))
 
     logger.info(f"starting download for {subscription_path.name}")
-    p = subprocess.run(full_args, cwd=working_path)
+    p = subprocess.run(args, cwd=working_path)
     if not p.returncode in [0, 101]:
         ee(f"yt-dlp returned error code {p.returncode}")
 
@@ -231,6 +212,30 @@ class Config():
     def iter(self, name):
         p = self.path / name
         return p.iterdir()
+
+    def get_yt_dlp_args(self):
+        args = [
+            "yt-dlp",
+            "--ignore-config",
+            "--print", "after_move:filepath,filename",
+            "--restrict-filenames",
+            "--break-on-existing",
+            "--write-thumbnail",
+            "--convert-thumbnails", "jpg",
+            "--write-info-json",
+            "--write-playlist-metafiles",
+            "--extract-audio",
+            "--download-archive", "download-archive",
+            "--retry-sleep", "http:exp=1:100:3",
+            "--retry-sleep", "fragment:exp=1:20",
+        ]
+        p = self.path.parent.parent / YT_DLP_CONFIG_FILE
+        if p.is_file():
+            args += ["--config-locations", str(p)]
+        p = self.path / YT_DLP_CONFIG_FILE
+        if p.is_file():
+            args += ["--config-locations", str(p)]
+        return args
 
 
 def get_project_metadata(key):
@@ -324,11 +329,9 @@ def do_add(config, name, url, args):
     dir.mkdir(parents=True, exist_ok=True)
     (dir / "url").write_text(url)
 
-    yt_dlp_args = ""
     if args.dateafter:
-        yt_dlp_args += f"--break-match-filters\nupload_date>={args.dateafter}\n"
-
-    (dir / "yt-dlp-args").write_text(yt_dlp_args)
+        yt_dlp_args += f"--break-match-filters upload_date>={args.dateafter}\n"
+        (dir / YT_DLP_CONFIG_FILE).write_text(yt_dlp_args)
 
 
 def main():

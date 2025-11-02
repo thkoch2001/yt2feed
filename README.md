@@ -17,30 +17,29 @@ This is the configurations directory structure:
 ├── subscriptions
 │   ├── $NAME            - a subscription with name $NAME
 │   │   ├── url          - url of the video playlist
-│   │   └── yt-dlp-args  - (optional) arguments for yt-dlp, one arg per line
+│   │   └── yt-dlp.conf  - (optional) config file for yt-dlp, see man yt-dlp
 │   ├── ...
 ├── feed_file_name       - (optional, default "feed.xml")
 ├── stylesheet_url       - (optional) url to an XML Stylesheet for the feeds
 ├── webroot_path         - CWD to execute yt-dlp in
-└── webroot_url          - base url to use in the rendered feed xml file
+├── webroot_url          - base url to use in the rendered feed xml file
+└── yt-dlp.conf          - (optional) global config file for yt-dlp, see man yt-dlp
 ```
 
 Do not use a youtube channel's frontpage as url but either the /video subpage
 or a playlist!
 
-The yt-dlp-args file can be used to filter videos to be downloaded, e.g.:
+The yt-dlp.conf file can be used to filter videos to be downloaded, e.g.:
 
 ```
---break-match-filters
-upload_date>20250728
---match-filters
-title~='^\d+ .*$'
+--break-match-filters upload_date>20250728
+--match-filters title~='^\d+ .*$'
 ```
 
 The above downloads videos uploaded after Juli 2025, stopping after
 encountering an earlier video and filters videos by titles starting with a
 number and a space. See the manpage of yt-dlp for other possible filters and
-check the YT_DLP_ARGS_COMMON variable in the source code of yt2feed.py for
+check the get_yt_dlp_args function in the source code of yt2feed.py for
 arguments already provided.
 
 ## Recommended usage
