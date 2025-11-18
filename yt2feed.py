@@ -330,8 +330,8 @@ def do_add(config, name, url, args):
     (dir / "url").write_text(url)
 
     if args.dateafter:
-        yt_dlp_args += f"--break-match-filters upload_date>={args.dateafter}\n"
-        (dir / YT_DLP_CONFIG_FILE).write_text(yt_dlp_args)
+        yt_dlp_conf = f"--break-match-filters upload_date>={args.dateafter}\n"
+        (dir / YT_DLP_CONFIG_FILE).write_text(yt_dlp_conf)
 
 
 def main():
